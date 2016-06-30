@@ -1,0 +1,4 @@
+h2 Edit Bookmark
+form action="/bookmarks/#{@bookmark.id}" method="post"
+  input type="hidden" name="_method" value="put"
+  == slim :bookmark_form_inputs
