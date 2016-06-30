@@ -23,7 +23,6 @@ get "/hello" do
 end
 
 def get_all_bookmarks
-  puts("Bookmarks #{Bookmark.all}")
   Bookmark.all(order: :title)
 end
 
@@ -47,11 +46,16 @@ post "/bookmarks" do
   bookmark = Bookmark.create(input)
   # Given an array, Sinatra will set [status_code, body]
   # With three elements, it will be [status code, header hash, body]
-  [201, "/bookmarks/#{bookmark['id']}"]
+  if bookmark.save
+    # Created
+    [201, "/bookmarks/#{bookmark['id']}"]
+  else
+    400 # Bad Request
+  end
 end
 
-get "/bookmarks/:id" do
-  id = params[:id]
+# Using block parameters
+get "/bookmarks/:id" do |id|
   @bookmark = Bookmark.get(id)
   respond_with :bookmark_form_edit, @bookmark
 end
@@ -59,9 +63,17 @@ end
 put "/bookmarks/:id" do
   id = params[:id]
   bookmark = Bookmark.get(id)
-  input = params.slice "url", "title"
-  bookmark.update(input)
-  204 # No content
+
+  if bookmark
+    input = params.slice("url", "title").reject { |k, v| v.nil? }
+    if bookmark.update(input)
+      204 # No content
+    else
+      400 # Bad Request
+    end
+  else
+    [404, "bookmark #{id} not found"]
+  end
 end
 
 delete "/bookmarks/:id" do
