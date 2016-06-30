@@ -18,6 +18,14 @@ set :template_engines, {
 DataMapper::setup(:default, "sqlite3://#{Dir.pwd}/bookmarks.db")
 DataMapper.finalize.auto_upgrade! # Create or update tables as needed
 
+# Works with all actions using '/bookmarks/:id' (get, put, delete)
+before "/bookmarks/:id" do |id|
+  @bookmark = Bookmark.get(id)
+  if !@bookmark
+    halt 404, "Bookmark #{id} not found"
+  end
+end
+
 get "/hello" do
   "Hello, Sinatra"
 end
@@ -32,8 +40,12 @@ end
 #   get_all_bookmarks.to_json
 # end
 
-get "/bookmarks" do
+get "/bookmarks/*" do
+  tags = params[:splat].first.split("/")
   @bookmarks = get_all_bookmarks
+  tags.each do |tag|
+    @bookmarks = bookmarks.all({ taggings: { tag: { label: tag }}}) 
+  end
   respond_with :bookmark_list, @bookmarks
 end
 
@@ -47,6 +59,7 @@ post "/bookmarks" do
   # Given an array, Sinatra will set [status_code, body]
   # With three elements, it will be [status code, header hash, body]
   if bookmark.save
+    add_tags(bookmark)
     # Created
     [201, "/bookmarks/#{bookmark['id']}"]
   else
@@ -55,37 +68,47 @@ post "/bookmarks" do
 end
 
 # Using block parameters
-get "/bookmarks/:id" do |id|
-  @bookmark = Bookmark.get(id)
+get "/bookmarks/:id" do
   respond_with :bookmark_form_edit, @bookmark
 end
 
 put "/bookmarks/:id" do
-  id = params[:id]
-  bookmark = Bookmark.get(id)
-
-  if bookmark
-    input = params.slice("url", "title").reject { |k, v| v.nil? }
-    if bookmark.update(input)
-      204 # No content
-    else
-      400 # Bad Request
-    end
+  input = params.slice("url", "title").reject { |k, v| v.nil? }
+  if @bookmark.update(input)
+    204 # No content
   else
-    [404, "bookmark #{id} not found"]
+    400 # Bad Request
   end
 end
 
 delete "/bookmarks/:id" do
-  id = params[:id]
-  bookmark = Bookmark.get(id)
-  bookmark.destroy
+  @bookmark.destroy
   200 # OK
 end
 
 helpers do
   def h(text)
     Rack::Utils.escape_html(text)
+  end
+
+  def add_tags(bookmark)
+    labels = (params["tagsAsString"] || "").split(",").map(&:strip)
+    existing_labels = []
+    bookmark.taggings.each do |tagging|
+      if labels.include? tagging.tag.label
+        existing_labels.push(tagging.tag.label)
+      else
+        tagging.destroy
+      end
+    end
+    (labels - existing_labels).each do |label|
+      tag = { label: label }
+      existing = Tag.first(tag)
+      if !existing
+        existing = Tag.create(tag)
+      end
+      Tagging.create(tag: existing, bookmark: bookmark)
+    end
   end
 end
 
